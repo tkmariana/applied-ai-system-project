@@ -14,7 +14,7 @@ import streamlit as st
 # after their files change (which causes errors like "unexpected keyword argument").
 # Remember each file's modification time and reload the modules, in dependency order,
 # whenever any of them differs, so the page always runs the latest code without a restart.
-_LOGIC_MODULES = ("pawpal_system", "guardrails", "agent")
+_LOGIC_MODULES = ("pawpal_system", "guardrails", "agent", "demo_data")
 
 
 @st.cache_resource(show_spinner=False)
@@ -33,6 +33,7 @@ if _loaded_versions().get("mtimes") != _mtimes:
     st.session_state.pop("assistant_result", None)  # was built from the old classes
 
 from agent import PawPalAgent, apply_proposal
+from demo_data import build_demo_household
 from logging_config import setup_logging
 from pawpal_system import Owner, Pet, Scheduler, Task
 
@@ -367,9 +368,15 @@ st.markdown(
 if not family.members:
     st.markdown(
         '<div class="empty"><div class="e">🏠</div><b>Welcome to PawPal+</b>'
-        "Add the first family member in the sidebar to get started.</div>",
+        "Add the first family member in the sidebar, or try a ready-made family.</div>",
         unsafe_allow_html=True,
     )
+    _, demo_col, _ = st.columns([1, 1, 1])
+    if demo_col.button("Load demo family", type="primary", icon=":material/auto_awesome:",
+                       use_container_width=True):
+        st.session_state.family = build_demo_household()
+        flash("Loaded the Rivera family: 3 members, 2 pets and a week of tasks", "✨")
+        st.rerun()
     st.stop()
 
 conflicts = scheduler.detect_conflicts()

@@ -1,57 +1,75 @@
+%% PawPal+ Family: system architecture
+%% Legend: solid arrows = data flow, dotted arrows = logging / testing,
+%%         green nodes = where a human checks or controls the AI, blue nodes = automated testing.
 flowchart TD
-    subgraph UI["Streamlit UI (app.py)"]
-        FORM[Owner / pet / task forms]
-        CHAT[Ask PawPal chat box]
-        APPROVE[Human approval: Approve / Reject]
-        PLAN[Daily plan, filters, conflict warnings]
+    FAM(["Family members<br/>(human users)"])
+
+    subgraph UI["Streamlit website (app.py)"]
+        FORMS["Forms: pets, tasks, members<br/>Done / Delete buttons"]
+        VIEWS["Today list, Calendar, Day plan<br/>conflict warnings, progress"]
+        CHAT["Assistant chat + suggestion chips"]
+        TOGGLE{{"Switch: let assistant make changes<br/>ON = acts directly, OFF = proposes only"}}
+        APPROVE["Approve / Reject proposed tasks"]
+        SHOWN["Assistant answer + list of changes it made"]
     end
 
     subgraph GUARD["Guardrails (guardrails.py)"]
-        SAN[sanitize_user_prompt<br/>length, control chars, injection]
-        SCOPE[check_scope<br/>pet-care only, no diagnosis]
-        VALINP[validate_task_inputs]
-        VALPROP[validate_proposal<br/>fields, known pet, time budget]
+        SAN["sanitize_user_prompt<br/>length, control chars, prompt injection"]
+        SCOPE["check_scope<br/>pet care only, no diagnosis or doses"]
+        VALTASK["validate_task_inputs / validate_proposal<br/>fields, known pet, known member, time budget"]
+        VALPET["validate_pet<br/>name, species, no duplicates"]
     end
 
-    subgraph AGENT["Agent (agent.py)"]
-        LOOP[PawPalAgent loop<br/>max 6 steps]
-        LLM[GeminiBackend<br/>google-genai]
-        APPLY[apply_proposal<br/>re-validates, adds Task]
+    subgraph AGENT["Agent (agent.py): plan, act, check"]
+        LOOP["PawPalAgent loop<br/>max 8 steps"]
+        LLM["GeminiBackend<br/>function calling, model fallback"]
+        APPLY["apply_proposal<br/>re-validates, then adds Task"]
     end
 
     subgraph TOOLS["Agent tools"]
-        T1[search_care_guide]
-        T2[list_tasks / check_conflicts / next_free_slot]
-        T3[propose_task]
+        T1["search_care_guide"]
+        T2["list_tasks, check_conflicts, next_free_slot"]
+        T3["add_task, add_pet, complete_task<br/>(no delete tool exists)"]
     end
 
-    subgraph RAG["RAG (rag.py)"]
-        RET[TF-IDF retrieve<br/>species filter, top-k]
-        KB[(data/knowledge<br/>dog, cat, other, general .md)]
+    subgraph RAG["Retriever (rag.py)"]
+        RET["TF-IDF retrieve<br/>species filter, minimum score"]
+        KB[("data/knowledge<br/>dog, cat, other, general .md")]
     end
 
-    subgraph CORE["Scheduling core (pawpal_system.py)"]
-        OWN[Owner] --> PET[Pet] --> TASK[Task]
-        SCHED[Scheduler<br/>priority plan, sort, filter, conflicts, next slot]
-        DP[DailyPlan]
-        SCHED --> DP
+    subgraph CORE["Household and scheduling core (pawpal_system.py)"]
+        HOUSE["Owner (household)<br/>members, pets, available minutes"]
+        TASKS["Pet and Task<br/>assignee, recurrence, completed_on"]
+        SCHED["Scheduler<br/>day plan, per-person conflicts, free slot"]
+        CAL["Calendar projection<br/>Task.occurs_on, Owner.tasks_on"]
+        HOUSE --> TASKS
+        SCHED --> TASKS
+        CAL --> TASKS
     end
 
-    subgraph QA["Testing and evaluation"]
-        PYT[pytest suite<br/>tests/]
-        EVAL[evals/run.py<br/>scope, injection, retrieval checks]
+    DEMO[("demo_data.py<br/>sample family")]
+
+    subgraph QA["Testing and evaluation (automated)"]
+        PYT["pytest suite: 77 tests<br/>scheduling, family, calendar, RAG, guardrails, agent"]
+        EVAL["evals/run.py: 25 checks<br/>retrieval accuracy, consistency,<br/>guardrails, agent actions"]
+        FAKE["Scripted fake model<br/>no network or API key"]
     end
 
-    LOGS[(logs/pawpal.log<br/>logging_config.py, redacted)]
+    LOGS[("logs/pawpal.log<br/>rotating, API keys redacted")]
 
-    FORM --> VALINP --> OWN
-    OWN --> SCHED
-    DP --> PLAN
-    CHAT --> SAN
-    SAN -->|blocked| REF[Refusal message]
+    %% Manual path (no AI)
+    FAM --> FORMS --> VALTASK --> HOUSE
+    HOUSE --> SCHED --> VIEWS
+    CAL --> VIEWS
+    VIEWS --> FAM
+    DEMO --> HOUSE
+
+    %% AI path
+    FAM --> CHAT --> SAN
+    SAN -->|blocked| REFUSE["Refusal message"]
     SAN --> SCOPE
-    SCOPE -->|blocked| REF
-    REF --> CHAT
+    SCOPE -->|blocked| REFUSE
+    REFUSE --> SHOWN
     SCOPE --> LOOP
     LOOP <--> LLM
     LOOP <--> T1
@@ -59,17 +77,35 @@ flowchart TD
     LOOP --> T3
     T1 --> RET --> KB
     T2 --> SCHED
-    T3 --> VALPROP
-    VALPROP -->|invalid: error returned to model| LOOP
-    VALPROP -->|valid| APPROVE
-    APPROVE -->|Approve| APPLY --> OWN
-    LOOP -->|answer + vet disclaimer| CHAT
+    T3 --> VALTASK
+    T3 --> VALPET
+    VALTASK -->|invalid: reason returned to model| LOOP
+    VALPET -->|invalid: reason returned to model| LOOP
+    VALTASK --> TOGGLE
+    VALPET --> TOGGLE
+    TOGGLE -->|ON: apply directly| APPLY
+    TOGGLE -->|OFF: proposal only| APPROVE
+    APPROVE -->|Approve| APPLY
+    APPLY --> HOUSE
+    LOOP -->|answer, grounded in retrieved text| SHOWN
+    SHOWN --> FAM
+
+    %% Logging
     LOOP -.-> LOGS
     GUARD -.-> LOGS
+    SCHED -.-> LOGS
 
+    %% Testing
     PYT -.-> CORE
     PYT -.-> GUARD
     PYT -.-> RAG
     PYT -.-> AGENT
-    EVAL -.-> GUARD
     EVAL -.-> RAG
+    EVAL -.-> GUARD
+    EVAL -.-> AGENT
+    FAKE -.-> LOOP
+
+    classDef human fill:#DDF7EE,stroke:#2FB380,color:#0F5C42;
+    classDef test fill:#E3F1FF,stroke:#3B82F6,color:#1D4ED8;
+    class FAM,TOGGLE,APPROVE,SHOWN,FORMS human;
+    class PYT,EVAL,FAKE test;

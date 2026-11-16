@@ -1,0 +1,68 @@
+conflicts_detected count=2
+
+As added:
+  16:00  Grooming (todo)
+  07:30  Morning walk (done)
+  16:30  Medication (todo)
+  07:30  Morning walk (todo)
+  18:00  Play session (todo)
+  --:--  Litter box (todo)
+  08:00  Feeding (todo)
+  16:00  Vet call (todo)
+
+Sorted by time:
+  07:30  Morning walk (done)
+  07:30  Morning walk (todo)
+  08:00  Feeding (todo)
+  16:00  Grooming (todo)
+  16:00  Vet call (todo)
+  16:30  Medication (todo)
+  18:00  Play session (todo)
+  --:--  Litter box (todo)
+
+Mochi only:
+  16:00  Grooming (todo)
+  07:30  Morning walk (done)
+  16:30  Medication (todo)
+  07:30  Morning walk (todo)
+
+Luna only, sorted:
+  08:00  Feeding (todo)
+  16:00  Vet call (todo)
+  18:00  Play session (todo)
+  --:--  Litter box (todo)
+
+Pending:
+  16:00  Grooming (todo)
+  16:30  Medication (todo)
+  07:30  Morning walk (todo)
+  18:00  Play session (todo)
+  --:--  Litter box (todo)
+  08:00  Feeding (todo)
+  16:00  Vet call (todo)
+
+Completed:
+  07:30  Morning walk (done)
+
+Mochi + pending:
+  16:00  Grooming (todo)
+  16:30  Medication (todo)
+  07:30  Morning walk (todo)
+
+Conflict check:
+  WARNING: Conflict (Mochi and Luna): 'Grooming' 16:00-16:45 overlaps 'Vet call' starting 16:00
+  WARNING: Conflict for Mochi: 'Grooming' 16:00-16:45 overlaps 'Medication' starting 16:30
+
+Next free 30-minute slot: 08:10
+
+Today's Schedule for Jordan (90 min available)
+==================================================
+Scheduled:
+  08:00-08:10  Medication (10 min) [priority: high]
+  08:10-08:20  Feeding (10 min) [priority: high]
+  08:20-08:25  Litter box (5 min) [priority: medium]
+  08:25-08:40  Vet call (15 min) [priority: medium]
+  08:40-09:00  Play session (20 min) [priority: medium]
+Skipped:
+  Grooming - needs 45 min but only 30 min left
+Total time: 60 min

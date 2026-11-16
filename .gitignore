@@ -3,3 +3,6 @@ __pycache__/
 .venv_new/
 .pytest_cache/
 .DS_Store
+# secrets and runtime output
+.env
+logs/
