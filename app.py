@@ -1,8 +1,14 @@
+import os
+
 import streamlit as st
 
 from datetime import datetime
 
+from agent import PawPalAgent, apply_proposal
+from logging_config import setup_logging
 from pawpal_system import Owner, Pet, Scheduler, Task
+
+setup_logging()
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
@@ -13,38 +19,6 @@ st.title("🐾 PawPal+")
 if "owner" not in st.session_state:
     st.session_state.owner = Owner(name="Jordan", available_minutes=90)
 owner = st.session_state.owner
-
-st.markdown(
-    """
-Welcome to the PawPal+ starter app.
-
-This file is intentionally thin. It gives you a working Streamlit app so you can start quickly,
-but **it does not implement the project logic**. Your job is to design the system and build it.
-
-Use this app as your interactive demo once your backend classes/functions exist.
-"""
-)
-
-with st.expander("Scenario", expanded=True):
-    st.markdown(
-        """
-**PawPal+** is a pet care planning assistant. It helps a pet owner plan care tasks
-for their pet(s) based on constraints like time, priority, and preferences.
-
-You will design and implement the scheduling logic and connect it to this Streamlit UI.
-"""
-    )
-
-with st.expander("What you need to build", expanded=True):
-    st.markdown(
-        """
-At minimum, your system should:
-- Represent pet care tasks (what needs to happen, how long it takes, priority)
-- Represent the pet and the owner (basic info and preferences)
-- Build a plan/schedule for a day that chooses and orders tasks based on constraints
-- Explain the plan (why each task was chosen and when it happens)
-"""
-    )
 
 st.divider()
 
@@ -187,6 +161,41 @@ if owner.get_all_tasks():
 
 else:
     st.info("No tasks yet.")
+
+st.divider()
+
+st.subheader("🤖 Ask PawPal Assistant")
+st.caption(
+    "Ask for care advice grounded in the PawPal pet-care guide. The assistant proposes tasks; "
+    "nothing is added until you approve. General guidance only, not veterinary advice."
+)
+if not owner.pets:
+    st.info("Add a pet first so the assistant knows who it is planning for.")
+elif not os.environ.get("GEMINI_API_KEY"):
+    st.info("Set GEMINI_API_KEY (environment variable or a GEMINI_API_KEY=... line in .env) and restart the app to enable the assistant.")
+else:
+    question = st.text_input("Your question", placeholder="What should I do daily for my beagle?")
+    if st.button("Ask") and question:
+        with st.spinner("Thinking..."):
+            st.session_state.assistant_result = PawPalAgent(owner).ask(question)
+    result = st.session_state.get("assistant_result")
+    if result:
+        (st.warning if result.refused or result.error else st.write)(result.answer)
+        for i, proposal in enumerate(list(result.proposals)):
+            label = (f"{proposal['pet']}: {proposal['title']} - {proposal['duration_minutes']} min, "
+                     f"{proposal['priority']}, {proposal.get('time') or 'any time'}, {proposal['frequency']}")
+            c1, c2, c3 = st.columns([4, 1, 1])
+            c1.write(label)
+            if c2.button("Approve", key=f"approve_{i}_{label}"):
+                try:
+                    apply_proposal(owner, proposal)
+                    result.proposals.remove(proposal)
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(f"Could not add: {exc}")
+            if c3.button("Reject", key=f"reject_{i}_{label}"):
+                result.proposals.remove(proposal)
+                st.rerun()
 
 st.divider()
 

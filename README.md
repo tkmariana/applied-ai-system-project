@@ -89,7 +89,7 @@ Run the tests from the project root:
 python -m pytest
 ```
 
-The 18 tests in `tests/test_pawpal.py` cover:
+The scheduler tests in `tests/test_pawpal.py` cover:
 
 - **Sorting:** `sort_by_time()` returns chronological order, puts untimed tasks last, keeps ties in their original order, and handles an empty list.
 - **Filtering:** `filter_tasks()` by pet, by status, by both, and with an unknown pet name.
@@ -113,7 +113,37 @@ tests\test_pawpal.py ..................                                  [100%]
 
 **Confidence Level: ⭐⭐⭐⭐ (4/5)**
 
-All 18 tests pass, and the sorting, recurrence, and conflict logic is covered including its edge cases. I'm not giving 5 because `Task.time` and `frequency` aren't validated (a bad value like `"abc"` would crash `detect_conflicts()`), `generate_plan()` isn't tested for how it handles preferred times or due dates, and the Streamlit UI has no tests.
+All 53 tests in the suite pass (scheduler, RAG, guardrails, agent), and the sorting, recurrence, and conflict logic is covered including its edge cases. `Task.time` and `frequency` are now validated, so a bad value like `"abc"` is rejected at creation. I'm not giving 5 because `generate_plan()` isn't tested for how it handles preferred times or due dates, and the Streamlit UI has no tests.
+
+## 🤖 AI Assistant (RAG + agent)
+
+PawPal Assistant answers pet-care questions and proposes tasks. It combines:
+
+- **RAG** (`rag.py`): the markdown guides in `data/knowledge/` are split by heading and ranked with TF-IDF (pure Python, light stemming). Results are filtered by the pet's species and dropped below a minimum score, so the assistant can say "no guidance" instead of guessing.
+- **Agentic workflow** (`agent.py`): a Gemini function-calling loop (capped steps) with tools `search_care_guide`, `list_tasks`, `check_conflicts`, `next_free_slot` and `propose_task`. The agent only *proposes*; you approve each task in the UI and `apply_proposal` re-validates before adding it.
+- **Guardrails** (`guardrails.py`): prompt length/control-character cleanup, prompt-injection phrase blocking, scope check (pet care only; no diagnoses or medication doses, with a vet disclaimer), strict field validation of every proposed task (title, 1-480 min, priority, `HH:MM`, frequency, known pet), a total-time budget check, a step cap, graceful handling of API errors and model refusals, and guaranteed source citations appended to answers. `Task` itself now rejects bad `time`/`frequency`.
+- **Logging** (`logging_config.py`): rotating `logs/pawpal.log` plus console. Records retrieval queries and scores, each agent step and tool call with latency, proposals rejected, guardrail trips, and plan/conflict events. API keys are redacted and user text is truncated.
+
+Flow diagram: [diagrams/ai_flow.mmd](diagrams/ai_flow.mmd).
+
+### Setup
+
+```bash
+pip install -r requirements.txt
+export GEMINI_API_KEY=...           # PowerShell: $env:GEMINI_API_KEY="..."
+streamlit run app.py
+```
+
+Get a free key at https://aistudio.google.com/apikey. The model defaults to `gemini-3.5-flash` (falling back to `gemini-3.1-flash-lite` if it is overloaded); override with the `PAWPAL_MODEL` environment variable (for example another model from your key's model list). Without a key the rest of the app works and the assistant section explains what to set.
+
+### Reliability testing
+
+- `python -m pytest` runs everything offline. `tests/test_agent.py` uses a scripted fake backend to check: proposals aren't applied without approval, invalid/over-budget/unknown-pet proposals are rejected, the step cap ends a looping agent, API errors and refusals degrade gracefully, and blocked prompts never reach the API.
+- `python -m evals.run` prints a pass rate for retrieval accuracy, no-answer behavior and guardrails (currently 13/13, average top retrieval score 0.45). Building it exposed a real bug: "walk" didn't match "walks/walking", which led to adding stemming.
+
+### Limitations
+
+Retrieval is keyword-based, so synonyms ("stroll") won't match; the knowledge base is small and general; the scope check is regex-based and can misjudge edge cases; live Gemini behavior isn't covered by the offline tests. This is not veterinary advice.
 
 ## 📐 Smarter Scheduling
 

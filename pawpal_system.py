@@ -1,9 +1,13 @@
 """PawPal+ logic layer: backend classes for owners, pets, tasks, and scheduling."""
 
+import logging
 from dataclasses import dataclass, field, replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 VALID_PRIORITIES = ("low", "medium", "high")
+VALID_FREQUENCIES = ("daily", "weekly", "once")
 # How far to move a task's due date when a recurring task is completed
 RECURRENCE_DELTAS = {"daily": timedelta(days=1), "weekly": timedelta(weeks=1)}
 PRIORITY_ORDER = {"low": 1, "medium": 2, "high": 3}
@@ -27,11 +31,20 @@ class Task:
     due_date: date | None = None  # when this occurrence is due; None means today
 
     def __post_init__(self) -> None:
-        """Reject priorities that aren't low, medium, or high."""
+        """Reject bad priorities, frequencies, and times so later code can trust them."""
         if self.priority not in VALID_PRIORITIES:
             raise ValueError(
                 f"priority must be one of {VALID_PRIORITIES}, got {self.priority!r}"
             )
+        if self.frequency not in VALID_FREQUENCIES:
+            raise ValueError(
+                f"frequency must be one of {VALID_FREQUENCIES}, got {self.frequency!r}"
+            )
+        if self.time is not None:
+            try:
+                datetime.strptime(self.time, "%H:%M")
+            except (ValueError, TypeError):
+                raise ValueError(f"time must look like HH:MM, got {self.time!r}") from None
 
     def priority_value(self) -> int:
         """Convert the priority label into a number for sorting."""
@@ -79,6 +92,8 @@ class Pet:
         for task in self.tasks:
             if task.title == title and not task.completed:
                 next_task = task.mark_complete()
+                logger.info("task_completed pet=%s title=%s recurs=%s",
+                            self.name, title, next_task is not None)
                 if next_task is not None:
                     self.add_task(next_task)
                 return next_task
@@ -238,6 +253,8 @@ class Scheduler:
                     f"Conflict {where}: '{task_a.title}' {_format_time(start_a)}-{_format_time(end_a)}"
                     f" overlaps '{task_b.title}' starting {_format_time(start_b)}"
                 )
+        if warnings:
+            logger.warning("conflicts_detected count=%d", len(warnings))
         return warnings
 
     def find_next_available_slot(
@@ -290,4 +307,6 @@ class Scheduler:
                     task,
                     f"needs {task.duration_minutes} min but only {remaining} min left",
                 )
+        logger.info("plan_generated scheduled=%d skipped=%d total_min=%d",
+                    len(plan.scheduled_tasks), len(plan.skipped_tasks), plan.total_minutes)
         return plan
