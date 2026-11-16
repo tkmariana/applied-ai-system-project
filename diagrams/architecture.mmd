@@ -1,0 +1,75 @@
+flowchart TD
+    subgraph UI["Streamlit UI (app.py)"]
+        FORM[Owner / pet / task forms]
+        CHAT[Ask PawPal chat box]
+        APPROVE[Human approval: Approve / Reject]
+        PLAN[Daily plan, filters, conflict warnings]
+    end
+
+    subgraph GUARD["Guardrails (guardrails.py)"]
+        SAN[sanitize_user_prompt<br/>length, control chars, injection]
+        SCOPE[check_scope<br/>pet-care only, no diagnosis]
+        VALINP[validate_task_inputs]
+        VALPROP[validate_proposal<br/>fields, known pet, time budget]
+    end
+
+    subgraph AGENT["Agent (agent.py)"]
+        LOOP[PawPalAgent loop<br/>max 6 steps]
+        LLM[GeminiBackend<br/>google-genai]
+        APPLY[apply_proposal<br/>re-validates, adds Task]
+    end
+
+    subgraph TOOLS["Agent tools"]
+        T1[search_care_guide]
+        T2[list_tasks / check_conflicts / next_free_slot]
+        T3[propose_task]
+    end
+
+    subgraph RAG["RAG (rag.py)"]
+        RET[TF-IDF retrieve<br/>species filter, top-k]
+        KB[(data/knowledge<br/>dog, cat, other, general .md)]
+    end
+
+    subgraph CORE["Scheduling core (pawpal_system.py)"]
+        OWN[Owner] --> PET[Pet] --> TASK[Task]
+        SCHED[Scheduler<br/>priority plan, sort, filter, conflicts, next slot]
+        DP[DailyPlan]
+        SCHED --> DP
+    end
+
+    subgraph QA["Testing and evaluation"]
+        PYT[pytest suite<br/>tests/]
+        EVAL[evals/run.py<br/>scope, injection, retrieval checks]
+    end
+
+    LOGS[(logs/pawpal.log<br/>logging_config.py, redacted)]
+
+    FORM --> VALINP --> OWN
+    OWN --> SCHED
+    DP --> PLAN
+    CHAT --> SAN
+    SAN -->|blocked| REF[Refusal message]
+    SAN --> SCOPE
+    SCOPE -->|blocked| REF
+    REF --> CHAT
+    SCOPE --> LOOP
+    LOOP <--> LLM
+    LOOP <--> T1
+    LOOP <--> T2
+    LOOP --> T3
+    T1 --> RET --> KB
+    T2 --> SCHED
+    T3 --> VALPROP
+    VALPROP -->|invalid: error returned to model| LOOP
+    VALPROP -->|valid| APPROVE
+    APPROVE -->|Approve| APPLY --> OWN
+    LOOP -->|answer + vet disclaimer| CHAT
+    LOOP -.-> LOGS
+    GUARD -.-> LOGS
+
+    PYT -.-> CORE
+    PYT -.-> GUARD
+    PYT -.-> RAG
+    PYT -.-> AGENT
+    EVAL -.-> GUARD
+    EVAL -.-> RAG

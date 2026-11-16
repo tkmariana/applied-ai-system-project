@@ -3,12 +3,12 @@ flowchart TD
     S -->|blocked| R1[Refusal message]
     S --> SC[check_scope<br/>pet-care only, no diagnosis]
     SC -->|blocked| R1
-    SC --> A[PawPalAgent loop<br/>Claude, max 6 steps]
+    SC --> A[PawPalAgent loop<br/>Gemini, max 6 steps]
     A <--> T1[search_care_guide<br/>RAG: TF-IDF over data/knowledge]
     A <--> T2[list_tasks / check_conflicts / next_free_slot<br/>Scheduler]
     A --> P[propose_task]
     P --> V[validate_proposal<br/>fields, known pet, time budget]
-    V -->|invalid: error returned to Claude| A
+    V -->|invalid: error returned to model| A
     V --> H[Human approval in Streamlit]
     H -->|Approve| AP[apply_proposal re-validates, adds Task]
     A --> L[(logs/pawpal.log)]
