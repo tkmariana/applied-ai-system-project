@@ -328,3 +328,6 @@ evals/live.py       live eval of the real model  evals/end_to_end.py end-to-end 
 ## Limitations
 
 Data isn't saved between page refreshes. There are no logins ("I'm using the app as" is a dropdown). Retrieval is keyword-based and the knowledge base is small and general. The scope check is regex-based and can misjudge edge cases. Live model behavior isn't covered by the offline tests. This is not veterinary advice.
+
+## Video
+https://www.loom.com/share/16728b8637674590b667617f78777ad1
