@@ -7,8 +7,8 @@ from agent import PawPalAgent, Step, apply_proposal
 from pawpal_system import Owner, Pet, Task
 
 
-def tool(name, **args):
-    return (name, args)
+def tool(_name, **args):
+    return (_name, args)
 
 
 def reply(*calls):
@@ -126,3 +126,71 @@ def test_conflict_tool_reports_overlap():
     backend = FakeBackend(reply(tool("check_conflicts")), say("done"))
     result = PawPalAgent(owner, backend).ask("Check my dog schedule")
     assert not result.error and result.steps == 2
+
+
+# --- Direct actions (auto_apply=True): the assistant acts like a family member ---
+
+def auto_agent(owner, backend):
+    return PawPalAgent(owner, backend, auto_apply=True)
+
+
+def test_assistant_adds_pet_directly():
+    owner = make_owner()
+    backend = FakeBackend(reply(tool("add_pet", name="Milo", species="cat")), say("Added Milo."))
+    result = auto_agent(owner, backend).ask("I adopted a cat named Milo, add my pet")
+    assert [p.name for p in owner.pets] == ["Rex", "Milo"]
+    assert result.actions == ["Added pet Milo (cat)"]
+
+
+def test_assistant_adds_task_directly_and_is_recorded_as_author():
+    owner = make_owner()
+    owner.add_member("Ana")
+    backend = FakeBackend(reply(tool("add_task", **GOOD, assigned_to="Ana")), say("Done."))
+    result = auto_agent(owner, backend).ask("Add a morning walk for my dog to Ana")
+    task = owner.get_all_tasks()[0]
+    assert task.title == "Morning walk" and task.assigned_to == "Ana"
+    assert task.added_by == "PawPal Assistant" and result.actions and not result.proposals
+
+
+def test_assistant_rejects_unknown_member_and_duplicate_pet():
+    owner = make_owner()
+    backend = FakeBackend(
+        reply(tool("add_task", **GOOD, assigned_to="Nobody"), tool("add_pet", name="rex", species="dog")),
+        say("sorry"),
+    )
+    result = auto_agent(owner, backend).ask("Add a walk and a pet for my dog")
+    assert owner.get_all_tasks() == [] and len(owner.pets) == 1 and result.actions == []
+
+
+def test_assistant_marks_task_done_and_recurring_returns_tomorrow():
+    owner = make_owner()
+    owner.pets[0].add_task(Task("Morning walk", 30, "high"))
+    backend = FakeBackend(reply(tool("complete_task", pet="rex", title="morning WALK")), say("Done."))
+    result = auto_agent(owner, backend).ask("Mark Rex's morning walk as done")
+    done, nxt = owner.pets[0].tasks
+    assert done.completed and not nxt.is_due() and result.actions == ["Marked 'Morning walk' done for Rex"]
+
+
+def test_complete_task_unknown_title_changes_nothing():
+    owner = make_owner()
+    backend = FakeBackend(reply(tool("complete_task", pet="Rex", title="Nope")), say("none"))
+    result = auto_agent(owner, backend).ask("Mark the walk as done")
+    assert result.actions == []
+
+
+def test_approval_mode_refuses_pets_and_completions_and_keeps_proposals():
+    owner = make_owner()
+    owner.pets[0].add_task(Task("Morning walk", 30, "high"))
+    backend = FakeBackend(
+        reply(tool("add_pet", name="Milo", species="cat"), tool("complete_task", pet="Rex", title="Morning walk"),
+              tool("add_task", **dict(GOOD, title="Evening walk", time="18:00"))),
+        say("ok"),
+    )
+    result = PawPalAgent(owner, backend).ask("Add a pet, finish the walk and add another walk")
+    assert len(owner.pets) == 1 and not owner.pets[0].tasks[0].completed
+    assert [p["title"] for p in result.proposals] == ["Evening walk"] and result.actions == []
+
+
+def test_assistant_has_no_delete_tool():
+    from agent import TOOLS
+    assert not [t["name"] for t in TOOLS if "delete" in t["name"] or "remove" in t["name"]]

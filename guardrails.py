@@ -29,7 +29,9 @@ _MEDICAL = re.compile(
 _PET_WORDS = re.compile(
     r"\b(pet|dog|cat|puppy|kitten|rabbit|bird|fish|hamster|reptile|walk|feed\w*|groom\w*|"
     r"litter|play|vet|task|schedule|routine|care|medic\w+|exercise|brush\w*|train\w*|"
-    r"bath\w*|beagle|guinea)\b", re.I)
+    r"bath\w*|beagle|guinea|adopt\w*|done|complet\w*|finish\w*|family)\b", re.I)
+_PET_NAME_OK = re.compile(r"^[\w .'-]+$")
+MAX_PET_NAME_CHARS = 30
 _TITLE_OK = re.compile(r"^[\w .,'&()/-]+$")
 _TIME_OK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -83,17 +85,33 @@ def validate_task_inputs(title, duration, priority, time=None, frequency="daily"
     return GuardResult(True)
 
 
+def validate_pet(owner, name, species) -> GuardResult:
+    """Check a new pet's name and species, and that the name isn't already taken."""
+    if not isinstance(name, str) or not name.strip():
+        return GuardResult(False, "pet name is required")
+    if len(name.strip()) > MAX_PET_NAME_CHARS or not _PET_NAME_OK.match(name.strip()):
+        return GuardResult(False, "pet name must be under 30 characters of plain text")
+    if species not in ("dog", "cat", "other"):
+        return GuardResult(False, "species must be one of ('dog', 'cat', 'other')")
+    if any(p.name.lower() == name.strip().lower() for p in owner.pets):
+        return GuardResult(False, f"there is already a pet named {name.strip()!r}")
+    return GuardResult(True)
+
+
 def validate_proposal(owner, proposal: dict) -> GuardResult:
     """Validate a proposal dict from the agent against the owner's real pets and time budget."""
     pet_names = {p.name for p in owner.pets}
     if proposal.get("pet") not in pet_names:
         return GuardResult(False, f"unknown pet {proposal.get('pet')!r}; choose from {sorted(pet_names)}")
+    assignee = proposal.get("assigned_to")
+    if assignee is not None and assignee not in getattr(owner, "members", []):
+        return GuardResult(False, f"unknown family member {assignee!r}; choose from {sorted(owner.members)}")
     result = validate_task_inputs(
         proposal.get("title"), proposal.get("duration_minutes"), proposal.get("priority"),
         proposal.get("time"), proposal.get("frequency", "daily"))
     if not result.ok:
         return result
-    pending = sum(t.duration_minutes for t in owner.get_all_tasks() if not t.completed)
+    pending = sum(t.duration_minutes for t in owner.get_all_tasks() if t.is_due())
     if pending + proposal["duration_minutes"] > owner.available_minutes:
         return GuardResult(
             False,
